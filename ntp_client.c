@@ -56,9 +56,22 @@ struct NTP_packet {
     uint32_t trans_timestamp_f;
 };
 
+void initPacket(struct NTP_packet* packet) {
+    
+    memset(packet, 0, sizeof(struct NTP_packet));
+
+    // initialize leap indicator, version number, and packet mode
+    uint8_t init_li_vn_m = 0;
+    init_li_vn_m |= LI << 6;
+    init_li_vn_m |= VN << 3;
+    init_li_vn_m |= MODE;
+
+    packet->li_vn_m = init_li_vn_m;
+}
+
 int main(int argc, char const *argv[]) {
 
-    int sock = 0, valread;
+    int sock = 0, valread, n;
     struct sockaddr_in serv_addr;
 
     if ((sock = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP )) < 0) {
@@ -81,38 +94,29 @@ int main(int argc, char const *argv[]) {
     }
 
     struct NTP_packet packet = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
-    memset(&packet, 0, sizeof(struct NTP_packet));
+    initPacket(&packet);
     
-    // initialize leap indicator, version number, and packet mode
-    uint8_t init_li_vn_m = 0;
-    init_li_vn_m |= LI << 6;
-    init_li_vn_m |= VN << 3;
-    init_li_vn_m |= MODE;
-
-    packet.li_vn_m = init_li_vn_m;
-
-    int n;
-
     while(1) {
         
         printf("Writing to socket...\n");
         n = write( sock, ( char* ) &packet, sizeof(struct NTP_packet ) );
 
-
         n = read( sock, ( char* ) &packet, sizeof(struct NTP_packet ) );
-        time_t rec_time = time(0);
+        
+        // T4 - capture immediately
+        uint32_t rec_time = time(0);
 
         // T1
-        uint32_t otime_s = packet.origin_timestamp_s;
-        uint32_t otime_f = packet.origin_timestamp_f;
+        uint32_t o_time_s = ntohl(packet.origin_timestamp_s);
+        uint32_t o_time_f = ntohl(packet.origin_timestamp_f);
 
         // T2
-        uint32_t r_time_s = packet.rec_timestamp_s;
-        uint32_t r_time_f = packet.rec_timestamp_f;
+        uint32_t r_time_s = ntohl(packet.rec_timestamp_s);
+        uint32_t r_time_f = ntohl(packet.rec_timestamp_f);
 
         // T3
-        uint32_t t_time_s = packet.trans_timestamp_s;
-        uint32_t t_time_s = packet.trans_timestamp_f;
+        uint32_t t_time_s = ntohl(packet.trans_timestamp_s);
+        uint32_t t_time_f = ntohl(packet.trans_timestamp_f);
 
         printf("RESPONSE FROM SERVER:\n");
         printf("Stratum: %d\n", packet.stratum);
@@ -121,8 +125,9 @@ int main(int argc, char const *argv[]) {
         printf("Root Delay: %d\n", packet.root_delay);
         printf("Reference Identifier: %d\n", packet.ref_identifier);
 
-        time_t origin_time = (time_t) (ntohl(packet.origin_timestamp_s) - NTP_TIMESTAMP_DELTA);
+        time_t origin_time = (time_t) (ntohl(packet.trans_timestamp_s) - NTP_TIMESTAMP_DELTA);
         printf("Origin Time %s", ctime((const time_t*) &origin_time));
+
         time_t transmit_time = (time_t) (ntohl(packet.trans_timestamp_s) - NTP_TIMESTAMP_DELTA);
         printf("Transmit Time %s", ctime((const time_t*) &transmit_time));
 
@@ -130,23 +135,18 @@ int main(int argc, char const *argv[]) {
 
         sleep(TIMEOUT);
 
-        memset(&packet, 0, sizeof(struct NTP_packet));
-    
-        // initialize leap indicator, version number, and packet mode
-        uint8_t init_li_vn_m = 0;
-        init_li_vn_m |= LI << 6;
-        init_li_vn_m |= VN << 3;
-        init_li_vn_m |= MODE;
+        // initPacket(&packet);
 
-        packet.li_vn_m = init_li_vn_m;
+        packet.li_vn_m = 35;
 
-        // not working...
-        packet.origin_timestamp_s = ntohl(packet.trans_timestamp_s) + NTP_TIMESTAMP_DELTA;
-        packet.origin_timestamp_f = ntohl(packet.trans_timestamp_f);
+        packet.origin_timestamp_s = t_time_s;
+        packet.origin_timestamp_f = t_time_f;
 
-        packet.rec_timestamp_s = (int)rec_time;
-
-        packet.trans_timestamp_s = (int)time(0);
+        packet.rec_timestamp_s = rec_time;
+        packet.rec_timestamp_f = 0;
+        
+        packet.trans_timestamp_s = time(0);
+        packet.trans_timestamp_f = 0;
     }
     
     return 0;
