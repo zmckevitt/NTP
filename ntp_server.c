@@ -9,6 +9,7 @@
 // - Personal repo for code from CSCI 5273 PA1
 // - https://github.com/jagd/ntp/blob/master/server.c
 //      > Shows how to convert tv_usec -> NTP fraction
+// - https://stackoverflow.com/questions/29112071/how-to-convert-ntp-time-to-unix-epoch-time-in-c-language-linux
 //
 //////////////////////////////////////////////////////
 
@@ -59,6 +60,35 @@ struct NTP_packet {
     uint32_t trans_timestamp_s;
     uint32_t trans_timestamp_f;
 };
+
+struct NTP_time {
+    uint32_t seconds;
+    uint32_t fraction;
+};
+
+void ntpToUnix(struct NTP_time* ntp_time, struct timeval* unix_time) {
+    unix_time->tv_sec = ntp_time->seconds - NTP_TIMESTAMP_DELTA;
+
+    uint64_t tmp = 0;
+    tmp = ntp_time->fraction;
+    tmp *= 1000000;
+
+    unix_time->tv_usec = tmp >> 32;
+}
+
+void unixToNTP(struct NTP_time* ntp_time, struct timeval* unix_time) {
+    ntp_time->seconds = unix_time->tv_sec + NTP_TIMESTAMP_DELTA;
+
+    uint64_t tmp = 0;
+    tmp = unix_time->tv_usec;
+
+    tmp <<= 32;
+    tmp /= 1000000;
+
+    ntp_time->fraction = tmp;
+}
+
+
 
 void initPacket(struct NTP_packet* packet) {
     
@@ -111,6 +141,8 @@ int main(int argc, char **argv) {
 
     while(1) {
         
+        struct NTP_time ntp_time = {0, 0};
+
         n = recvfrom(listenfd, (char*) &packet, sizeof(struct NTP_packet),
                      0, (struct sockaddr*) &clientaddr, (socklen_t*) &len);
 
@@ -145,14 +177,16 @@ int main(int argc, char **argv) {
         packet.origin_timestamp_f = htonl(t_time_f);
 
         // update receive time to server's receive timestamp
-        packet.rec_timestamp_s = htonl(rec_time_s + NTP_TIMESTAMP_DELTA);
-        packet.rec_timestamp_f = htonl((4294*(rec_time_f)) + ((1981*(rec_time_f))>>11));//rec_time_f;
+        unixToNTP(&ntp_time, &t_rec);
+        packet.rec_timestamp_s = htonl(ntp_time.seconds);
+        packet.rec_timestamp_f = htonl(ntp_time.fraction);
 
         // set transmit time to now
         struct timeval t_trans;
         gettimeofday(&t_trans, NULL);
-        packet.trans_timestamp_s = htonl(t_trans.tv_sec + NTP_TIMESTAMP_DELTA);
-        packet.trans_timestamp_f = htonl((4294*(t_trans.tv_usec)) + ((1981*(t_trans.tv_usec))>>11));//t_trans.tv_usec;
+        unixToNTP(&ntp_time, &t_trans);
+        packet.trans_timestamp_s = htonl(ntp_time.seconds);
+        packet.trans_timestamp_f = htonl(ntp_time.fraction);
 
         printf("SECONDS SINCE 1970: %u\n", packet.rec_timestamp_s);
 
