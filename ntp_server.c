@@ -1,11 +1,14 @@
 //////////////////////////////////////////////////////
 //
 // NTP Server - CSCI 5673
+// Author: Zack McKevitt
 //
 // Sources:
 // - https://lettier.github.io/posts/2016-04-26-lets-make-a-ntp-client-in-c.html
 // - https://www.geeksforgeeks.org/socket-programming-cc/
 // - Personal repo for code from CSCI 5273 PA1
+// - https://github.com/jagd/ntp/blob/master/server.c
+//      > Shows how to convert tv_usec -> NTP fraction
 //
 //////////////////////////////////////////////////////
 
@@ -14,6 +17,7 @@
 #include <sys/socket.h>
 #include <stdlib.h>
 #include <netinet/in.h>
+#include <arpa/inet.h>
 #include <string.h>
 #include <pthread.h>
 #include <sys/time.h>
@@ -26,20 +30,20 @@
 // version number
 #define VN 4
 
-// packet mode
-#define MODE 3
+// packet mode (server)
+#define MODE 4
 
-uint64_t NTP_TIMESTAMP_DELTA = 2208988800;
+#define NTP_TIMESTAMP_DELTA 2208988800
 
 struct NTP_packet {
     
     uint8_t li_vn_m;
     uint8_t stratum;
-    uint8_t poll;
-    uint8_t precision;
+    int8_t poll;
+    int8_t precision;
 
-    uint32_t root_delay;
-    uint32_t root_dispersion;
+    int32_t root_delay;
+    int32_t root_dispersion;
     uint32_t ref_identifier;
 
     // seconds and fractional seconds
@@ -126,26 +130,29 @@ int main(int argc, char **argv) {
         uint32_t r_time_f = ntohl(packet.rec_timestamp_f);
 
         // T3
-        uint32_t t_time_s = packet.trans_timestamp_s;
-        uint32_t t_time_f = packet.trans_timestamp_f;
+        uint32_t t_time_s = ntohl(packet.trans_timestamp_s);
+        uint32_t t_time_f = ntohl(packet.trans_timestamp_f);
 
         printf("Received client message.\n");
 
         initPacket(&packet);
 
+        // set reference identifier to client IP
+        char* ip = inet_ntoa(clientaddr.sin_addr);
+
         // update origin time to client's transmit time
-        packet.origin_timestamp_s = t_time_s;
-        packet.origin_timestamp_f = t_time_f;
+        packet.origin_timestamp_s = htonl(t_time_s);
+        packet.origin_timestamp_f = htonl(t_time_f);
 
         // update receive time to server's receive timestamp
-        packet.rec_timestamp_s = rec_time_s + NTP_TIMESTAMP_DELTA;
-        packet.rec_timestamp_f = (4294*(rec_time_f)) + ((1981*(rec_time_f))>>11);//rec_time_f;
+        packet.rec_timestamp_s = htonl(rec_time_s + NTP_TIMESTAMP_DELTA);
+        packet.rec_timestamp_f = htonl((4294*(rec_time_f)) + ((1981*(rec_time_f))>>11));//rec_time_f;
 
         // set transmit time to now
         struct timeval t_trans;
         gettimeofday(&t_trans, NULL);
-        packet.trans_timestamp_s = t_trans.tv_sec + NTP_TIMESTAMP_DELTA;
-        packet.trans_timestamp_f = (4294*(t_trans.tv_usec)) + ((1981*(t_trans.tv_usec))>>11);//t_trans.tv_usec;
+        packet.trans_timestamp_s = htonl(t_trans.tv_sec + NTP_TIMESTAMP_DELTA);
+        packet.trans_timestamp_f = htonl((4294*(t_trans.tv_usec)) + ((1981*(t_trans.tv_usec))>>11));//t_trans.tv_usec;
 
         printf("SECONDS SINCE 1970: %u\n", packet.rec_timestamp_s);
 

@@ -1,10 +1,13 @@
 //////////////////////////////////////////////////////
 //
 // NTP Client - CSCI 5673
+// Author: Zack McKevitt
 //
 // Sources:
 // - https://lettier.github.io/posts/2016-04-26-lets-make-a-ntp-client-in-c.html
 // - https://www.geeksforgeeks.org/socket-programming-cc/
+// - https://github.com/jagd/ntp/blob/master/server.c
+//      > Shows how to convert tv_usec -> NTP fraction
 //
 //////////////////////////////////////////////////////
 
@@ -16,18 +19,27 @@
 #include <sys/time.h>
 #include <time.h>
 
-#define LOCAL
+// #define LOCAL
 
 // localhost configuration
 #ifdef LOCAL
-#define PORT 8080
-#define IP_ADDR "127.0.0.1"
+    #define PORT 8080
+    #define IP_ADDR "127.0.0.1"
+
+    // send BURST requests every TIMEOUT seconds
+    #define BURST 4
+    #define TIMEOUT 16
 #endif
 
 // google NTP server configuration
 #ifndef LOCAL
-#define PORT 123
-#define IP_ADDR "216.239.35.0"
+    #define PORT 123
+    #define IP_ADDR "216.239.35.0"
+
+    // send BURST requests every TIMEOUT seconds
+    // google does not allow more than 1 request every 4 seconds
+    #define BURST 1
+    #define TIMEOUT 4
 #endif
 
 // leap indicator
@@ -36,24 +48,21 @@
 // version number
 #define VN 4
 
-// packet mode
+// packet mode (client)
 #define MODE 3
 
 #define NTP_TIMESTAMP_DELTA 2208988800
 
-// send BURST requests every TIMEOUT seconds
-#define BURST 4
-#define TIMEOUT 15
    
 struct NTP_packet {
     
     uint8_t li_vn_m;
     uint8_t stratum;
-    uint8_t poll;
-    uint8_t precision;
+    int8_t poll;
+    int8_t precision;
 
-    uint32_t root_delay;
-    uint32_t root_dispersion;
+    int32_t root_delay;
+    int32_t root_dispersion;
     uint32_t ref_identifier;
 
     // seconds and fractional seconds
@@ -84,23 +93,23 @@ void initPacket(struct NTP_packet* packet) {
 void printPacket(struct NTP_packet packet) {
 
     printf("--------NTP Packet--------\n");
-    printf("Leap Indicator:      %u\n", (packet.li_vn_m >> 6) & 3);
-    printf("Version Number:      %u\n", (packet.li_vn_m >> 3) & 7);
-    printf("Mode:                %u\n", (packet.li_vn_m & 7));
-    printf("Stratum:             %u\n", packet.stratum);
-    printf("Poll:                %u\n", packet.poll);
-    printf("Precision:           %u\n", packet.precision);
-    printf("Root Delay:          %u\n", packet.root_delay);
-    printf("Root Dispersion:     %u\n", packet.root_dispersion);
-    printf("Ref Identifier:      %u\n", (packet.ref_identifier));
-    printf("Ref timestamp (s):   %u\n", (packet.ref_timestamp_s));
-    printf("Ref timestamp (f):   %u\n", (packet.ref_timestamp_f));
-    printf("Org timestamp (s):   %u\n", (packet.origin_timestamp_s));
-    printf("Org timestamp (f):   %u\n", (packet.origin_timestamp_f));
-    printf("Rec timestamp (s):   %u\n", (packet.rec_timestamp_s));
-    printf("Rec timestamp (f):   %u\n", (packet.rec_timestamp_f));
-    printf("Trans timestamp (s): %u\n", (packet.trans_timestamp_s));
-    printf("Trans timestamp (f): %u\n", (packet.trans_timestamp_f));
+    printf("Leap Indicator:         %u\n", ((packet.li_vn_m >> 6) & 3));
+    printf("Version Number:         %u\n", ((packet.li_vn_m >> 3) & 7));
+    printf("Mode:                   %u\n", (packet.li_vn_m & 7));
+    printf("Stratum:                %u\n", (packet.stratum));
+    printf("Poll:                   %u\n", (packet.poll));
+    printf("Precision:              %u\n", (packet.precision));
+    printf("Root Delay:             %u\n", (packet.root_delay));
+    printf("Root Dispersion:        %u\n", (packet.root_dispersion));
+    printf("Ref Identifier:         %u\n", (packet.ref_identifier));
+    printf("Ref timestamp (s):      %u\n", ntohl(packet.ref_timestamp_s));
+    printf("Ref timestamp (f):      %u\n", ntohl(packet.ref_timestamp_f));
+    printf("Org timestamp (s):      %u\n", ntohl(packet.origin_timestamp_s));
+    printf("Org timestamp (f):      %u\n", ntohl(packet.origin_timestamp_f));
+    printf("Rec timestamp (s):      %u\n", ntohl(packet.rec_timestamp_s));
+    printf("Rec timestamp (f):      %u\n", ntohl(packet.rec_timestamp_f));
+    printf("Trans timestamp (s):    %u\n", ntohl(packet.trans_timestamp_s));
+    printf("Trans timestamp (f):    %u\n", ntohl(packet.trans_timestamp_f));
 }
 
 int main(int argc, char const *argv[]) {
@@ -128,6 +137,7 @@ int main(int argc, char const *argv[]) {
     }
 
     struct NTP_packet packet = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
+    initPacket(&packet);
     
     int update_time = 0;
     while(1) {
@@ -139,12 +149,12 @@ int main(int argc, char const *argv[]) {
                 // set transmit time to now
                 struct timeval t_trans;
                 gettimeofday(&t_trans, NULL);
-                packet.trans_timestamp_s = t_trans.tv_sec;
-                packet.trans_timestamp_f = t_trans.tv_usec;
+                packet.trans_timestamp_s = htonl(t_trans.tv_sec);
+                packet.trans_timestamp_f = htonl((4294*(t_trans.tv_usec)) + ((1981*(t_trans.tv_usec))>>11));
                 update_time = 0;
 
-                printf("Transmitting at %u seconds\n", (uint32_t)(t_trans.tv_sec));
-                printf("Transmitting at %u useconds\n", (uint32_t)(t_trans.tv_usec));
+                printf("Transmitting at %lu seconds\n", (t_trans.tv_sec));
+                printf("Transmitting at %lu useconds\n", (4294*(t_trans.tv_usec)) + ((1981*(t_trans.tv_usec))>>11));
             }
 
             printf("Writing to socket...\n");
@@ -175,33 +185,33 @@ int main(int argc, char const *argv[]) {
             printPacket(packet);
 
             time_t origin_time = (time_t) (ntohl(packet.trans_timestamp_s) - NTP_TIMESTAMP_DELTA);
-            printf("Origin Time %s", ctime((const time_t*) &origin_time));
+            printf("\nOrigin Time %s", ctime((const time_t*) &origin_time));
 
             time_t transmit_time = (time_t) (ntohl(packet.trans_timestamp_s) - NTP_TIMESTAMP_DELTA);
             printf("Transmit Time %s", ctime((const time_t*) &transmit_time));
 
+            time_t recv_time = (time_t) (ntohl(packet.rec_timestamp_s) - NTP_TIMESTAMP_DELTA);
+            printf("Receive Time %s", ctime((const time_t*) &recv_time));
             printf("----------------------\n");
-
-            // sleep(TIMEOUT);
 
             initPacket(&packet);
 
-            packet.origin_timestamp_s = t_time_s;
-            packet.origin_timestamp_f = t_time_f;
+            packet.origin_timestamp_s = htonl(t_time_s);
+            packet.origin_timestamp_f = htonl(t_time_f);
 
-            packet.rec_timestamp_s = rec_time_s;
-            packet.rec_timestamp_f = rec_time_f;
+            packet.rec_timestamp_s = htonl(rec_time_s + NTP_TIMESTAMP_DELTA);
+            packet.rec_timestamp_f = htonl((4294*(rec_time_f)) + ((1981*(rec_time_f))>>11));
             
 
             // set transmit time to now
             struct timeval t_trans;
             gettimeofday(&t_trans, NULL);
-            packet.trans_timestamp_s = t_trans.tv_sec;
-            packet.trans_timestamp_f = t_trans.tv_usec;
+            packet.trans_timestamp_s = htonl(t_trans.tv_sec + NTP_TIMESTAMP_DELTA);
+            packet.trans_timestamp_f = htonl((4294*(t_trans.tv_usec)) + ((1981*(t_trans.tv_usec))>>11));
 
             if(!update_time) {
-                printf("Transmitting at %u seconds\n", (uint32_t)(t_trans.tv_sec));
-                printf("Transmitting at %u useconds\n", (uint32_t)(t_trans.tv_usec));
+                printf("Transmitting at %lu seconds\n", t_trans.tv_sec);
+                printf("Transmitting at %lu useconds\n", (4294*(t_trans.tv_usec)) + ((1981*(t_trans.tv_usec))>>11));
             }
         }
         update_time = 1;
