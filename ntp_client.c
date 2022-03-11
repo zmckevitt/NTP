@@ -16,9 +16,19 @@
 #include <sys/time.h>
 #include <time.h>
 
+#define LOCAL
+
+// localhost configuration
+#ifdef LOCAL
 #define PORT 8080
 #define IP_ADDR "127.0.0.1"
-// #define IP_ADDR "216.239.35.0"
+#endif
+
+// google NTP server configuration
+#ifndef LOCAL
+#define PORT 123
+#define IP_ADDR "216.239.35.0"
+#endif
 
 // leap indicator
 #define LI 0
@@ -31,7 +41,9 @@
 
 #define NTP_TIMESTAMP_DELTA 2208988800
 
-#define TIMEOUT 4
+// send BURST requests every TIMEOUT seconds
+#define BURST 4
+#define TIMEOUT 15
    
 struct NTP_packet {
     
@@ -116,68 +128,84 @@ int main(int argc, char const *argv[]) {
     }
 
     struct NTP_packet packet = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
-    memset(&packet, 0, sizeof(struct NTP_packet));
-
-    initPacket(&packet);
     
+    int update_time = 0;
     while(1) {
-        
-        printf("Writing to socket...\n");
-        n = write( sock, ( char* ) &packet, sizeof(struct NTP_packet ) );
-        printf("Reading from socket...\n");
-        n = read( sock, ( char* ) &packet, sizeof(struct NTP_packet ) );
-        
-        // T4
-        // record time of message receive
-        struct timeval r_rec;
-        gettimeofday(&r_rec, NULL);
-        uint32_t rec_time_s = r_rec.tv_sec;
-        uint32_t rec_time_f = r_rec.tv_usec;
 
-        // T1
-        uint32_t o_time_s = ntohl(packet.origin_timestamp_s);
-        uint32_t o_time_f = ntohl(packet.origin_timestamp_f);
+        for(int i=0; i<BURST; ++i) {
 
-        // T2
-        uint32_t r_time_s = ntohl(packet.rec_timestamp_s);
-        uint32_t r_time_f = ntohl(packet.rec_timestamp_f);
+            // update transmit time for first packet of burst
+            if(update_time) {
+                // set transmit time to now
+                struct timeval t_trans;
+                gettimeofday(&t_trans, NULL);
+                packet.trans_timestamp_s = t_trans.tv_sec;
+                packet.trans_timestamp_f = t_trans.tv_usec;
+                update_time = 0;
 
-        // T3
-        uint32_t t_time_s = ntohl(packet.trans_timestamp_s);
-        uint32_t t_time_f = ntohl(packet.trans_timestamp_f);
+                printf("Transmitting at %u seconds\n", (uint32_t)(t_trans.tv_sec));
+                printf("Transmitting at %u useconds\n", (uint32_t)(t_trans.tv_usec));
+            }
 
-        printf("RESPONSE FROM SERVER:\n");
-        printPacket(packet);
+            printf("Writing to socket...\n");
+            n = write( sock, ( char* ) &packet, sizeof(struct NTP_packet ) );
+            printf("Reading from socket...\n");
+            n = read( sock, ( char* ) &packet, sizeof(struct NTP_packet ) );
+            
+            // T4
+            // record time of message receive
+            struct timeval r_rec;
+            gettimeofday(&r_rec, NULL);
+            uint32_t rec_time_s = r_rec.tv_sec;
+            uint32_t rec_time_f = r_rec.tv_usec;
 
-        time_t origin_time = (time_t) (ntohl(packet.trans_timestamp_s) - NTP_TIMESTAMP_DELTA);
-        printf("Origin Time %s", ctime((const time_t*) &origin_time));
+            // T1
+            uint32_t o_time_s = ntohl(packet.origin_timestamp_s);
+            uint32_t o_time_f = ntohl(packet.origin_timestamp_f);
 
-        time_t transmit_time = (time_t) (ntohl(packet.trans_timestamp_s) - NTP_TIMESTAMP_DELTA);
-        printf("Transmit Time %s", ctime((const time_t*) &transmit_time));
+            // T2
+            uint32_t r_time_s = ntohl(packet.rec_timestamp_s);
+            uint32_t r_time_f = ntohl(packet.rec_timestamp_f);
 
-        printf("----------------------\n");
+            // T3
+            uint32_t t_time_s = ntohl(packet.trans_timestamp_s);
+            uint32_t t_time_f = ntohl(packet.trans_timestamp_f);
 
+            printf("RESPONSE FROM SERVER:\n");
+            printPacket(packet);
+
+            time_t origin_time = (time_t) (ntohl(packet.trans_timestamp_s) - NTP_TIMESTAMP_DELTA);
+            printf("Origin Time %s", ctime((const time_t*) &origin_time));
+
+            time_t transmit_time = (time_t) (ntohl(packet.trans_timestamp_s) - NTP_TIMESTAMP_DELTA);
+            printf("Transmit Time %s", ctime((const time_t*) &transmit_time));
+
+            printf("----------------------\n");
+
+            // sleep(TIMEOUT);
+
+            initPacket(&packet);
+
+            packet.origin_timestamp_s = t_time_s;
+            packet.origin_timestamp_f = t_time_f;
+
+            packet.rec_timestamp_s = rec_time_s;
+            packet.rec_timestamp_f = rec_time_f;
+            
+
+            // set transmit time to now
+            struct timeval t_trans;
+            gettimeofday(&t_trans, NULL);
+            packet.trans_timestamp_s = t_trans.tv_sec;
+            packet.trans_timestamp_f = t_trans.tv_usec;
+
+            if(!update_time) {
+                printf("Transmitting at %u seconds\n", (uint32_t)(t_trans.tv_sec));
+                printf("Transmitting at %u useconds\n", (uint32_t)(t_trans.tv_usec));
+            }
+        }
+        update_time = 1;
         sleep(TIMEOUT);
-
-        // initPacket(&packet);
-
-        initPacket(&packet);
-
-        packet.origin_timestamp_s = t_time_s;
-        packet.origin_timestamp_f = t_time_f;
-
-        packet.rec_timestamp_s = rec_time_s;
-        packet.rec_timestamp_f = rec_time_f;
-        
-
-        // set transmit time to now
-        struct timeval t_trans;
-        gettimeofday(&t_trans, NULL);
-        packet.trans_timestamp_s = t_trans.tv_sec;
-        packet.trans_timestamp_f = t_trans.tv_usec;
-
-        printf("Transmitting at %u seconds\n", (uint32_t)(t_trans.tv_sec));
-        printf("Transmitting at %u useconds\n", (uint32_t)(t_trans.tv_usec));
     }
     
     return 0;

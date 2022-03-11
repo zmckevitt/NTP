@@ -29,7 +29,7 @@
 // packet mode
 #define MODE 3
 
-#define NTP_TIMESTAMP_DELTA 2208988800
+uint64_t NTP_TIMESTAMP_DELTA = 2208988800;
 
 struct NTP_packet {
     
@@ -108,7 +108,7 @@ int main(int argc, char **argv) {
     while(1) {
         
         n = recvfrom(listenfd, (char*) &packet, sizeof(struct NTP_packet),
-                     0, (struct sockaddr*) &clientaddr, &len);
+                     0, (struct sockaddr*) &clientaddr, (socklen_t*) &len);
 
         // T4
         // record time of message receive
