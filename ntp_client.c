@@ -20,32 +20,27 @@
 #include <sys/time.h>
 #include <time.h>
 
-#define LOCAL       // tells program to use local NTP server over public server
+// #define LOCAL       // tells program to use local NTP server over public server
 #define LOGGING     // enables logging for experiments
 
 #define LOGGING_DIR  "./experiments/"
-#define LOG_SCENARIO "LAN"  // can be "LAN", "CLOUD", or "PUBLIC"
+#define LOG_SCENARIO "PUBLIC"  // can be "LAN", "CLOUD", or "PUBLIC"
 
 // localhost configuration
 #ifdef LOCAL
     #define PORT 8080
     #define IP_ADDR "127.0.0.1"
-
-    // send BURST requests every TIMEOUT seconds
-    #define BURST 8
-    #define TIMEOUT 16
 #endif
 
 // google NTP server configuration
 #ifndef LOCAL
     #define PORT 123
     #define IP_ADDR "216.239.35.0"
-
-    // send BURST requests every TIMEOUT seconds
-    // google does not allow more than 1 request every 4 seconds
-    #define BURST 1
-    #define TIMEOUT 4
 #endif
+
+// send BURST requests every TIMEOUT seconds
+#define BURST 8
+#define TIMEOUT 240
 
 // leap indicator
 #define LI 0
@@ -178,8 +173,8 @@ struct timeval calcOffset(struct timeval T1, struct timeval T2, struct timeval T
     right.tv_usec = T3.tv_usec - T4.tv_usec;
 
     struct timeval ret_t;
-    ret_t.tv_sec = 0.5 * (left.tv_sec + right.tv_sec);
-    ret_t.tv_usec = 0.5 * (left.tv_usec + right.tv_usec);
+    ret_t.tv_sec = (left.tv_sec + right.tv_sec)/2;
+    ret_t.tv_usec = (left.tv_usec + right.tv_usec)/2;
 
     return ret_t;
 }
@@ -208,11 +203,9 @@ void logDelOff(int message_pair, int burst, struct timeval delay, struct timeval
     // open logging file to append
     FILE* fp = fopen(filename, "a");
 
-    char buffer[1024];
-    sprintf(buffer, "%d %d %lu %lu %lu %lu\n", message_pair, burst, 
+    fprintf(fp, "%d %d %lu %lu %lu %lu\n", message_pair, burst, 
             delay.tv_sec, delay.tv_usec, offset.tv_sec, offset.tv_usec);
 
-    fwrite(buffer, sizeof(char), sizeof(buffer), fp);
     fclose(fp);
 }
 
@@ -224,11 +217,9 @@ void logUpdates(int message_pair, struct timeval delay, struct timeval offset) {
     // open logging file to append
     FILE* fp = fopen(filename, "a");
 
-    char buffer[1024];
-    sprintf(buffer, "%d %lu %lu %lu %lu\n", message_pair, 
+    fprintf(fp, "%d %lu %lu %lu %lu\n", message_pair, 
             delay.tv_sec, delay.tv_usec, offset.tv_sec, offset.tv_usec);
 
-    fwrite(buffer, sizeof(char), sizeof(buffer), fp);
     fclose(fp);
 
 }
@@ -287,7 +278,7 @@ int main(int argc, char const *argv[]) {
 
             // update transmit time for first packet of burst
             if(first_burst) {
-                // set transmit time to now
+                // // set transmit time to now
                 // struct timeval t_trans;
                 // gettimeofday(&t_trans, NULL);
                 // unixToNTP(&ntp_time, &t_trans);
@@ -393,8 +384,8 @@ int main(int argc, char const *argv[]) {
         struct timeval delay_update = arrMin(delay_arr);
         struct timeval offset_update = arrMin(offset_arr);
 
-        printf("Delay update value (s):  %lu\n", delay_update.tv_sec);
-        printf("Offser update value (s): %lu\n", offset_update.tv_sec);
+        printf("Delay update value (us):  %lu\n", delay_update.tv_usec);
+        printf("Offset update value (us): %lu\n", offset_update.tv_usec);
 
         #ifdef LOGGING
         logUpdates(message_pair, delay_update, offset_update);
