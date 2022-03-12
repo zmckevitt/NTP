@@ -20,8 +20,8 @@
 #include <sys/time.h>
 #include <time.h>
 
-// #define LOCAL       // tells program to use local NTP server over public server
-// #define LOGGING     // enables logging for experiments
+#define LOCAL       // tells program to use local NTP server over public server
+#define LOGGING     // enables logging for experiments
 
 #define LOGGING_DIR  "./experiments/"
 #define LOG_SCENARIO "LAN"  // can be "LAN", "CLOUD", or "PUBLIC"
@@ -29,9 +29,9 @@
 // localhost configuration
 #ifdef LOCAL
     #define PORT 8080
-    #define IP_ADDR "127.0.0.1"      // localhost server
+    // #define IP_ADDR "127.0.0.1"      // localhost server
     // #define IP_ADDR "10.0.0.29"      // LAN server 
-    // #define IP_ADDR "34.106.71.102"  // GCP server
+    #define IP_ADDR "34.106.71.102"  // GCP server
 #endif
 
 // google NTP server configuration
@@ -42,7 +42,7 @@
 
 // send BURST requests every TIMEOUT seconds
 #define BURST 8
-#define TIMEOUT 16
+#define TIMEOUT 240
 
 // leap indicator
 #define LI 0
@@ -385,7 +385,7 @@ int main(int argc, char const *argv[]) {
             // log delay and offset
             #ifdef LOGGING
             logDelOff(message_pair, i, delay_arr[i], offset_arr[i]);
-            logData(message_pair, i, org_NTP, rec_NTP, tx_NTP, r_NTP)
+            logData(message_pair, i, org_NTP, rec_NTP, tx_NTP, r_NTP);
             #endif
 
             printf("RESPONSE FROM SERVER:\n");
