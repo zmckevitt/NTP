@@ -173,8 +173,8 @@ int main(int argc, char **argv) {
         char* ip = inet_ntoa(clientaddr.sin_addr);
 
         // update origin time to client's transmit time
-        packet.origin_timestamp_s = htonl(t_time_s);
-        packet.origin_timestamp_f = htonl(t_time_f);
+        packet.origin_timestamp_s = t_time_s;
+        packet.origin_timestamp_f = t_time_f;
 
         // update receive time to server's receive timestamp
         unixToNTP(&ntp_time, &t_rec);
