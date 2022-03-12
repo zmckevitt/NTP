@@ -21,15 +21,17 @@
 #include <time.h>
 
 // #define LOCAL       // tells program to use local NTP server over public server
-#define LOGGING     // enables logging for experiments
+// #define LOGGING     // enables logging for experiments
 
 #define LOGGING_DIR  "./experiments/"
-#define LOG_SCENARIO "PUBLIC"  // can be "LAN", "CLOUD", or "PUBLIC"
+#define LOG_SCENARIO "LAN"  // can be "LAN", "CLOUD", or "PUBLIC"
 
 // localhost configuration
 #ifdef LOCAL
     #define PORT 8080
-    #define IP_ADDR "34.106.71.102"
+    #define IP_ADDR "127.0.0.1"      // localhost server
+    // #define IP_ADDR "10.0.0.29"      // LAN server 
+    // #define IP_ADDR "34.106.71.102"  // GCP server
 #endif
 
 // google NTP server configuration
@@ -40,7 +42,7 @@
 
 // send BURST requests every TIMEOUT seconds
 #define BURST 8
-#define TIMEOUT 240
+#define TIMEOUT 16
 
 // leap indicator
 #define LI 0
@@ -53,6 +55,8 @@
 
 #define NTP_TIMESTAMP_DELTA 2208988800
 
+// socket timeout threshold
+#define S_TIMEOUT 10
    
 struct NTP_packet {
     
@@ -168,9 +172,13 @@ struct NTP_time calcOffset(struct NTP_time  T1, struct NTP_time  T2, struct NTP_
     left.seconds = T2.seconds - T1.seconds;
     left.fraction = T2.fraction - T1.fraction;
 
+    printf("LEFT F: %u\n", left.fraction);
+
     struct NTP_time right;
     right.seconds = T3.seconds - T4.seconds;
     right.fraction = T3.fraction - T4.fraction;
+
+    printf("RIGHT F: %u\n", right.fraction);
 
     struct NTP_time ret_t;
     ret_t.seconds = (left.seconds + right.seconds)/2;
@@ -224,6 +232,22 @@ void logUpdates(int message_pair, struct NTP_time delay, struct NTP_time offset)
 
 }
 
+// after each burst, record update values delt_0 and thet_0
+void logData(int message_pair, int burst, struct NTP_time  T1, struct NTP_time  T2, struct NTP_time  T3, struct NTP_time  T4) {
+    char filename[100];
+    sprintf(filename, "%s%s_raw.csv", LOGGING_DIR, LOG_SCENARIO);
+
+    // open logging file to append
+    FILE* fp = fopen(filename, "a");
+
+    fprintf(fp, "%d %d %u %u %u %u %u %u %u %u\n", message_pair, burst, 
+            T1.seconds, T1.fraction, T2.seconds, T2.fraction, 
+            T3.seconds, T3.fraction, T4.seconds, T4.fraction);
+
+    fclose(fp);
+
+}
+
 int main(int argc, char const *argv[]) {
 
     int sock = 0, valread, n;
@@ -233,6 +257,15 @@ int main(int argc, char const *argv[]) {
         printf("Socket creation error \n");
         return -1;
     }
+
+    // set socket to timeout after TIMEOUT seconds
+    struct timeval timeout;      
+    timeout.tv_sec = S_TIMEOUT;
+    timeout.tv_usec = 0;
+    
+    if (setsockopt (sock, SOL_SOCKET, SO_RCVTIMEO, &timeout,
+                sizeof timeout) < 0)
+        printf("setsockopt failed\n");
    
     serv_addr.sin_family = AF_INET;
     serv_addr.sin_port = htons(PORT);
@@ -272,22 +305,23 @@ int main(int argc, char const *argv[]) {
         memset(delay_arr, 0, sizeof(delay_arr));
         memset(offset_arr, 0, sizeof(offset_arr));
 
-        for(int i=0; i<BURST; ++i) {
+        int i;
+        for(i=0; i<BURST; ++i) {
 
             struct NTP_time ntp_time = {0, 0};
 
             // update transmit time for first packet of burst
             if(first_burst) {
-                // // set transmit time to now
-                // struct timeval t_trans;
-                // gettimeofday(&t_trans, NULL);
-                // unixToNTP(&ntp_time, &t_trans);
-                // packet.trans_timestamp_s = htonl(ntp_time.seconds);
-                // packet.trans_timestamp_f = htonl(ntp_time.fraction);
+                // set transmit time to now
+                struct timeval t_trans;
+                gettimeofday(&t_trans, NULL);
+                unixToNTP(&ntp_time, &t_trans);
+                packet.trans_timestamp_s = htonl(ntp_time.seconds);
+                packet.trans_timestamp_f = htonl(ntp_time.fraction);
                 
                 // someone suggested to set tx time for first burst to be 0
-                packet.trans_timestamp_s = 0;
-                packet.trans_timestamp_f = 0;
+                // packet.trans_timestamp_s = 0;
+                // packet.trans_timestamp_f = 0;
 
                 first_burst = 0;
 
@@ -299,6 +333,14 @@ int main(int argc, char const *argv[]) {
             n = write( sock, ( char* ) &packet, sizeof(struct NTP_packet ) );
             printf("Reading from socket...\n");
             n = read( sock, ( char* ) &packet, sizeof(struct NTP_packet ) );
+
+            // timeout
+            // recalculate transmit time and reset burst
+            if(n<0) {
+                first_burst = 1;
+                i = 0;
+                continue;
+            }
             
             // T4
             // record time of message receive
@@ -343,6 +385,7 @@ int main(int argc, char const *argv[]) {
             // log delay and offset
             #ifdef LOGGING
             logDelOff(message_pair, i, delay_arr[i], offset_arr[i]);
+            logData(message_pair, i, org_NTP, rec_NTP, tx_NTP, r_NTP)
             #endif
 
             printf("RESPONSE FROM SERVER:\n");
@@ -381,18 +424,19 @@ int main(int argc, char const *argv[]) {
             }
         }
 
-        message_pair += 1;
-
         struct NTP_time delay_update = arrMin(delay_arr);
         struct NTP_time offset_update = arrMin(offset_arr);
 
+        printf("Delay update value (s):   %u\n", delay_update.seconds);
         printf("Delay update value (us):  %u\n", delay_update.fraction);
+        printf("Offset update value (s):  %u\n", offset_update.seconds);
         printf("Offset update value (us): %u\n", offset_update.fraction);
 
         #ifdef LOGGING
         logUpdates(message_pair, delay_update, offset_update);
         #endif
 
+        message_pair += 1;
         first_burst = 1;
         sleep(TIMEOUT);
     }
