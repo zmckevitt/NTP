@@ -29,7 +29,7 @@
 // localhost configuration
 #ifdef LOCAL
     #define PORT 8080
-    #define IP_ADDR "127.0.0.1"
+    #define IP_ADDR "34.106.71.102"
 #endif
 
 // google NTP server configuration
@@ -139,55 +139,55 @@ void printPacket(struct NTP_packet packet) {
     printf("Trans timestamp (f):    %u\n", ntohl(packet.trans_timestamp_f));
 }
 
-// calculate individual delay in UNIX TIME
-struct timeval calcDelay(struct timeval T1, struct timeval T2, struct timeval T3, struct timeval T4) {
+// calculate individual delay in NTP TIME
+struct NTP_time calcDelay(struct NTP_time T1, struct NTP_time  T2, struct NTP_time  T3, struct NTP_time  T4) {
     
     // delay = (T4 – T1) - (T3 – T2) 
 
-    struct timeval left;
-    left.tv_sec = T4.tv_sec - T1.tv_sec;
-    left.tv_usec = T4.tv_usec - T1.tv_usec;
+    struct NTP_time left;
+    left.seconds = T4.seconds - T1.seconds;
+    left.fraction = T4.fraction - T1.fraction;
 
-    struct timeval right;
-    right.tv_sec = T3.tv_sec - T2.tv_sec;
-    right.tv_usec = T3.tv_usec - T2.tv_usec;
+    struct NTP_time right;
+    right.seconds = T3.seconds - T2.seconds;
+    right.fraction = T3.fraction - T2.fraction;
 
-    struct timeval ret_t;
-    ret_t.tv_sec = left.tv_sec - right.tv_sec;
-    ret_t.tv_usec = left.tv_usec - right.tv_usec;
+    struct NTP_time ret_t;
+    ret_t.seconds = left.seconds - right.seconds;
+    ret_t.fraction = left.fraction - right.fraction;
 
     return ret_t;
 }
 
-// calculate individual offset in UNIX TIME
-struct timeval calcOffset(struct timeval T1, struct timeval T2, struct timeval T3, struct timeval T4) {
+// calculate individual offset in NTP TIME
+struct NTP_time calcOffset(struct NTP_time  T1, struct NTP_time  T2, struct NTP_time  T3, struct NTP_time  T4) {
     
     // offset = 0.5[(T2 – T1) + (T3 – T4)]
 
-    struct timeval left;
-    left.tv_sec = T2.tv_sec - T1.tv_sec;
-    left.tv_usec = T2.tv_usec - T1.tv_usec;
+    struct NTP_time left;
+    left.seconds = T2.seconds - T1.seconds;
+    left.fraction = T2.fraction - T1.fraction;
 
-    struct timeval right;
-    right.tv_sec = T3.tv_sec - T4.tv_sec;
-    right.tv_usec = T3.tv_usec - T4.tv_usec;
+    struct NTP_time right;
+    right.seconds = T3.seconds - T4.seconds;
+    right.fraction = T3.fraction - T4.fraction;
 
-    struct timeval ret_t;
-    ret_t.tv_sec = (left.tv_sec + right.tv_sec)/2;
-    ret_t.tv_usec = (left.tv_usec + right.tv_usec)/2;
+    struct NTP_time ret_t;
+    ret_t.seconds = (left.seconds + right.seconds)/2;
+    ret_t.fraction = (left.fraction + right.fraction)/2;
 
     return ret_t;
 }
 
-struct timeval arrMin(struct timeval* arr) {
+struct NTP_time arrMin(struct NTP_time* arr) {
 
-    struct timeval min;
-    min.tv_sec = 4294967295; // max uint32
-    min.tv_usec = 4294967295;
+    struct NTP_time min;
+    min.seconds = 4294967295; // max uint32
+    min.fraction = 4294967295;
 
     for(int i=0; i<BURST; ++i) {
-        struct timeval tmp = arr[i];
-        if(tmp.tv_sec < min.tv_sec && tmp.tv_usec < min.tv_usec) {
+        struct NTP_time tmp = arr[i];
+        if(tmp.seconds < min.seconds && tmp.fraction < min.fraction) {
             min = tmp;
         }
     }
@@ -196,29 +196,29 @@ struct timeval arrMin(struct timeval* arr) {
 }
 
 // at each burst, record d_i and o_i
-void logDelOff(int message_pair, int burst, struct timeval delay, struct timeval offset) {
+void logDelOff(int message_pair, int burst, struct NTP_time delay, struct NTP_time offset) {
     char filename[100];
     sprintf(filename, "%s%s.csv", LOGGING_DIR, LOG_SCENARIO);
 
     // open logging file to append
     FILE* fp = fopen(filename, "a");
 
-    fprintf(fp, "%d %d %lu %lu %lu %lu\n", message_pair, burst, 
-            delay.tv_sec, delay.tv_usec, offset.tv_sec, offset.tv_usec);
+    fprintf(fp, "%d %d %u %u %u %u\n", message_pair, burst, 
+            delay.seconds, delay.fraction, offset.seconds, offset.fraction);
 
     fclose(fp);
 }
 
 // after each burst, record update values delt_0 and thet_0
-void logUpdates(int message_pair, struct timeval delay, struct timeval offset) {
+void logUpdates(int message_pair, struct NTP_time delay, struct NTP_time offset) {
     char filename[100];
     sprintf(filename, "%s%s.csv", LOGGING_DIR, LOG_SCENARIO);
 
     // open logging file to append
     FILE* fp = fopen(filename, "a");
 
-    fprintf(fp, "%d %lu %lu %lu %lu\n", message_pair, 
-            delay.tv_sec, delay.tv_usec, offset.tv_sec, offset.tv_usec);
+    fprintf(fp, "%d %u %u %u %u\n", message_pair, 
+            delay.seconds, delay.fraction, offset.seconds, offset.fraction);
 
     fclose(fp);
 
@@ -255,8 +255,8 @@ int main(int argc, char const *argv[]) {
 
     // define arrays for delay and offset to be calculated after each burst
     // upon sedning BURST bursts, we calculate min value and reset arrays
-    struct timeval delay_arr[BURST];
-    struct timeval offset_arr[BURST];
+    struct NTP_time delay_arr[BURST];
+    struct NTP_time offset_arr[BURST];
 
     // initialize delay and offset arrays to 0
     memset(delay_arr, 0, sizeof(delay_arr));
@@ -303,9 +303,11 @@ int main(int argc, char const *argv[]) {
             // T4
             // record time of message receive
             struct timeval r_rec;
+            struct NTP_time r_NTP;
             gettimeofday(&r_rec, NULL);
             uint32_t rec_time_s = r_rec.tv_sec;
             uint32_t rec_time_f = r_rec.tv_usec;
+            unixToNTP(&r_NTP, &r_rec);
 
             // T1
             uint32_t o_time_s = ntohl(packet.origin_timestamp_s);
@@ -335,8 +337,8 @@ int main(int argc, char const *argv[]) {
             ntpToUnix(&tx_NTP, &tx_unix);
 
             // calculate delay and offset values and store them in the array
-            delay_arr[i] = calcDelay(org_unix, rec_unix, tx_unix, r_rec);
-            offset_arr[i] = calcOffset(org_unix, rec_unix, tx_unix, r_rec);
+            delay_arr[i] = calcDelay(org_NTP, rec_NTP, tx_NTP, r_NTP);
+            offset_arr[i] = calcOffset(org_NTP, rec_NTP, tx_NTP, r_NTP);
 
             // log delay and offset
             #ifdef LOGGING
@@ -381,11 +383,11 @@ int main(int argc, char const *argv[]) {
 
         message_pair += 1;
 
-        struct timeval delay_update = arrMin(delay_arr);
-        struct timeval offset_update = arrMin(offset_arr);
+        struct NTP_time delay_update = arrMin(delay_arr);
+        struct NTP_time offset_update = arrMin(offset_arr);
 
-        printf("Delay update value (us):  %lu\n", delay_update.tv_usec);
-        printf("Offset update value (us): %lu\n", offset_update.tv_usec);
+        printf("Delay update value (us):  %u\n", delay_update.fraction);
+        printf("Offset update value (us): %u\n", offset_update.fraction);
 
         #ifdef LOGGING
         logUpdates(message_pair, delay_update, offset_update);
