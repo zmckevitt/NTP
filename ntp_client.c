@@ -24,7 +24,7 @@
 #define LOGGING     // enables logging for experiments
 
 #define LOGGING_DIR  "./experiments/"
-#define LOG_SCENARIO "LAN"  // can be "LAN", "CLOUD", or "PUBLIC"
+#define LOG_SCENARIO "CLOUD"  // can be "LAN", "CLOUD", or "PUBLIC"
 
 // localhost configuration
 #ifdef LOCAL
@@ -42,7 +42,7 @@
 
 // send BURST requests every TIMEOUT seconds
 #define BURST 8
-#define TIMEOUT 240
+#define TIMEOUT 4
 
 // leap indicator
 #define LI 0
@@ -169,20 +169,16 @@ struct NTP_time calcOffset(struct NTP_time  T1, struct NTP_time  T2, struct NTP_
     // offset = 0.5[(T2 – T1) + (T3 – T4)]
 
     struct NTP_time left;
-    left.seconds = T2.seconds - T1.seconds;
-    left.fraction = T2.fraction - T1.fraction;
-
-    printf("LEFT F: %u\n", left.fraction);
+    left.seconds = (int32_t)(T2.seconds - T1.seconds);
+    left.fraction = (int32_t)(T2.fraction - T1.fraction);
 
     struct NTP_time right;
-    right.seconds = T3.seconds - T4.seconds;
-    right.fraction = T3.fraction - T4.fraction;
-
-    printf("RIGHT F: %u\n", right.fraction);
+    right.seconds = (int32_t)(T3.seconds - T4.seconds);
+    right.fraction = (int32_t)(T3.fraction - T4.fraction);
 
     struct NTP_time ret_t;
-    ret_t.seconds = (left.seconds + right.seconds)/2;
-    ret_t.fraction = (left.fraction + right.fraction)/2;
+    ret_t.seconds = (int32_t)(left.seconds + right.seconds)/2;
+    ret_t.fraction = (int32_t)(left.fraction + right.fraction)/2;
 
     return ret_t;
 }
@@ -195,8 +191,13 @@ struct NTP_time arrMin(struct NTP_time* arr) {
 
     for(int i=0; i<BURST; ++i) {
         struct NTP_time tmp = arr[i];
-        if(tmp.seconds < min.seconds && tmp.fraction < min.fraction) {
+        if(tmp.seconds < min.seconds) {
             min = tmp;
+        }
+        else if(tmp.seconds == min.seconds) {
+            if(tmp.fraction < min.fraction) {
+                min = tmp;
+            }
         }
     }
 
@@ -211,7 +212,7 @@ void logDelOff(int message_pair, int burst, struct NTP_time delay, struct NTP_ti
     // open logging file to append
     FILE* fp = fopen(filename, "a");
 
-    fprintf(fp, "%d %d %u %u %u %u\n", message_pair, burst, 
+    fprintf(fp, "%d %d %u %u %d %d\n", message_pair, burst, 
             delay.seconds, delay.fraction, offset.seconds, offset.fraction);
 
     fclose(fp);
@@ -225,7 +226,7 @@ void logUpdates(int message_pair, struct NTP_time delay, struct NTP_time offset)
     // open logging file to append
     FILE* fp = fopen(filename, "a");
 
-    fprintf(fp, "%d %u %u %u %u\n", message_pair, 
+    fprintf(fp, "%d %u %u %d %d\n", message_pair, 
             delay.seconds, delay.fraction, offset.seconds, offset.fraction);
 
     fclose(fp);
@@ -337,6 +338,7 @@ int main(int argc, char const *argv[]) {
             // timeout
             // recalculate transmit time and reset burst
             if(n<0) {
+                return 0;
                 first_burst = 1;
                 i = 0;
                 continue;
@@ -427,10 +429,10 @@ int main(int argc, char const *argv[]) {
         struct NTP_time delay_update = arrMin(delay_arr);
         struct NTP_time offset_update = arrMin(offset_arr);
 
-        printf("Delay update value (s):   %u\n", delay_update.seconds);
-        printf("Delay update value (us):  %u\n", delay_update.fraction);
-        printf("Offset update value (s):  %u\n", offset_update.seconds);
-        printf("Offset update value (us): %u\n", offset_update.fraction);
+        printf("Delay update value (s):   %d\n", delay_update.seconds);
+        printf("Delay update value (us):  %d\n", delay_update.fraction);
+        printf("Offset update value (s):  %d\n", offset_update.seconds);
+        printf("Offset update value (us): %d\n", offset_update.fraction);
 
         #ifdef LOGGING
         logUpdates(message_pair, delay_update, offset_update);
