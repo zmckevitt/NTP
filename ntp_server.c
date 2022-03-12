@@ -188,8 +188,6 @@ int main(int argc, char **argv) {
         packet.trans_timestamp_s = htonl(ntp_time.seconds);
         packet.trans_timestamp_f = htonl(ntp_time.fraction);
 
-        printf("SECONDS SINCE 1970: %u\n", packet.rec_timestamp_s);
-
         n = sendto(listenfd, (char*) &packet, sizeof(struct NTP_packet), 
                    0, (const struct sockaddr*)&clientaddr, len);
 
